@@ -1,5 +1,5 @@
 {
-  "name": "line-interview-bot",
+  "name": "line-bot-president",
   "version": "1.0.0",
   "description": "LINE Bot for Interview Management",
   "main": "app.js",

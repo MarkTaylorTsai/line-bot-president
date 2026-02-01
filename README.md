@@ -53,8 +53,8 @@ CHANNEL_SECRET=your_line_channel_secret_here
 SUPABASE_URL=your_supabase_project_url_here
 SUPABASE_KEY=your_supabase_service_role_key_here
 
-# Bishop Configuration
-BISHOP_LINE_USER_ID=your_bishop_line_user_id_here
+# President (會長) Configuration
+PRESIDENT_LINE_USER_ID=your_president_line_user_id_here
 
 # Cron Service Configuration (Optional)
 CRON_API_KEY=your_cron_service_api_key_here
@@ -98,7 +98,7 @@ Since Vercel is serverless, you need to set up an external cron service to trigg
 
 #### Option 2: GitHub Actions (Free)
 
-Create `.github/workflows/cron.yml`:
+Create `.github/workflows/cron.yml` in your project:
 
 ```yaml
 name: Trigger Reminders
@@ -256,7 +256,7 @@ The bot automatically sends reminder notifications:
 
 - **24 hours before** each scheduled interview
 - **3 hours before** each scheduled interview
-- Reminders are sent via LINE messages to the bishop
+- Reminders are sent via LINE messages to the president (會長)
 - Each reminder type is sent only once per interview
 - Reminder status is tracked in the database to prevent duplicates
 
@@ -266,7 +266,7 @@ The bot automatically sends reminder notifications:
 - **Precise Timing**: Uses exact datetime calculations (23.5-24.5 hours for 24h, 2.5-3.5 hours for 3h)
 - **Duplicate Prevention**: Database tracks which reminders have been sent
 - **Edge Case Handling**: Automatically skips reminders for interviews added too close to start time
-- **Bishop Targeting**: All reminders sent to configured bishop LINE user ID
+- **President Targeting**: All reminders sent to configured president (會長) LINE user ID
 - **Error Handling**: Failed reminders are logged but don't stop the system
 - **Idempotent**: Safe to call multiple times without duplicate reminders
 - **API Key Protection**: Optional API key verification for security
@@ -293,7 +293,7 @@ The bot includes comprehensive error handling for:
 ### Project Structure
 
 ```
-line-bot/
+line-bot-president/
 ├── app.js                 # Main application file
 ├── package.json           # Dependencies and scripts
 ├── database/
@@ -313,11 +313,10 @@ npm run dev
 
 ## Contributing
 
-1. Fork the repository
-2. Create a feature branch
-3. Make your changes
-4. Test thoroughly
-5. Submit a pull request
+1. Create a feature branch
+2. Make your changes
+3. Test thoroughly
+4. Submit a pull request
 
 ## License
 
@@ -325,4 +324,4 @@ MIT License
 
 ## Support
 
-For issues and questions, please create an issue in the repository.
+For issues and questions, please create an issue in your project's issue tracker.

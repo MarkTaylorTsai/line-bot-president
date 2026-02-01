@@ -18,8 +18,8 @@ const supabaseUrl = process.env.SUPABASE_URL;
 const supabaseKey = process.env.SUPABASE_KEY;
 const supabase = createClient(supabaseUrl, supabaseKey);
 
-// Bishop configuration - who receives the reminders
-const BISHOP_LINE_USER_ID = process.env.BISHOP_LINE_USER_ID;
+// President (會長) configuration - who receives the reminders
+const PRESIDENT_LINE_USER_ID = process.env.PRESIDENT_LINE_USER_ID;
 
 const client = new line.Client(lineConfig);
 
@@ -564,7 +564,7 @@ async function handleReminderStatusCommand(userId, replyToken) {
 }
 
 async function sendHelpMessage(replyToken) {
-  const helpText = '主教團助理使用說明：\n\n📝 加入面談：\n加入 {面談對象} {面談者} {日期} {時間} {理由}\n例如：加入 約翰 陳佑庭 2024-01-15 14:30 聖殿推薦書面談\n\n📋 查看清單：\n面談清單\n\n✏️ 更新面談：\n更新 {ID} {欄位} {新值}\n例如：更新 1 面談對象 彼得\n可用欄位：面談對象、面談者、日期、時間、理由\n\n🗑️ 刪除面談：\n刪除 {ID}\n例如：刪除 1\n\n📋 查看提醒狀態：\n提醒狀態\n\n💡 注意事項：\n- 日期格式：YYYY-MM-DD\n- 時間格式：HH:mm\n- ID 可在面談清單中查看\n- 系統會自動發送24小時和3小時前的提醒通知';
+  const helpText = '會長團助理使用說明：\n\n📝 加入面談：\n加入 {面談對象} {面談者} {日期} {時間} {理由}\n例如：加入 約翰 陳佑庭 2024-01-15 14:30 聖殿推薦書面談\n\n📋 查看清單：\n面談清單\n\n✏️ 更新面談：\n更新 {ID} {欄位} {新值}\n例如：更新 1 面談對象 彼得\n可用欄位：面談對象、面談者、日期、時間、理由\n\n🗑️ 刪除面談：\n刪除 {ID}\n例如：刪除 1\n\n📋 查看提醒狀態：\n提醒狀態\n\n💡 注意事項：\n- 日期格式：YYYY-MM-DD\n- 時間格式：HH:mm\n- ID 可在面談清單中查看\n- 系統會自動發送24小時和3小時前的提醒通知';
 
   await client.replyMessage(replyToken, {
     type: 'text',
@@ -662,18 +662,18 @@ class ReminderManager {
         errors.push(`Group ${groupId}: Invalid LINE group ID format`);
       }
 
-      // Send to bishop if configured and valid
-      if (BISHOP_LINE_USER_ID && BISHOP_LINE_USER_ID !== interview.user_id && this.isValidLineUserId(BISHOP_LINE_USER_ID)) {
+      // Send to president (會長) if configured and valid
+      if (PRESIDENT_LINE_USER_ID && PRESIDENT_LINE_USER_ID !== interview.user_id && this.isValidLineUserId(PRESIDENT_LINE_USER_ID)) {
         try {
-          console.log('Pushing to bishop:', BISHOP_LINE_USER_ID);
-          await client.pushMessage(BISHOP_LINE_USER_ID, {
+          console.log('Pushing to president:', PRESIDENT_LINE_USER_ID);
+          await client.pushMessage(PRESIDENT_LINE_USER_ID, {
             type: 'text',
             text: message
           });
           sentCount++;
-          console.log(`📨 Sent ${reminderType} reminder to bishop ${BISHOP_LINE_USER_ID} for interview ${interview.id}`);
+          console.log(`📨 Sent ${reminderType} reminder to president ${PRESIDENT_LINE_USER_ID} for interview ${interview.id}`);
         } catch (error) {
-          console.error(`❌ Failed to send reminder to bishop ${BISHOP_LINE_USER_ID}:`, error);
+          console.error(`❌ Failed to send reminder to president ${PRESIDENT_LINE_USER_ID}:`, error);
           
           // Log detailed LINE API error information
           if (error.originalError && error.originalError.response) {
@@ -682,11 +682,11 @@ class ReminderManager {
             console.error('LINE API headers:', error.originalError.response.headers);
           }
           
-          errors.push(`Bishop ${BISHOP_LINE_USER_ID}: ${error.message}`);
+          errors.push(`President ${PRESIDENT_LINE_USER_ID}: ${error.message}`);
         }
-      } else if (BISHOP_LINE_USER_ID && !this.isValidLineUserId(BISHOP_LINE_USER_ID)) {
-        console.warn(`⚠️ Skipping bishop ${BISHOP_LINE_USER_ID} - not a valid LINE user ID format`);
-        errors.push(`Bishop ${BISHOP_LINE_USER_ID}: Invalid LINE user ID format`);
+      } else if (PRESIDENT_LINE_USER_ID && !this.isValidLineUserId(PRESIDENT_LINE_USER_ID)) {
+        console.warn(`⚠️ Skipping president ${PRESIDENT_LINE_USER_ID} - not a valid LINE user ID format`);
+        errors.push(`President ${PRESIDENT_LINE_USER_ID}: Invalid LINE user ID format`);
       }
 
       return { 
@@ -807,7 +807,7 @@ app.post('/callback', line.middleware(lineConfig), async (req, res) => {
         if (userMessage === '呼叫面談助理') {
           const instructionMenu = {
             type: 'text',
-            text: '主教團助理使用說明：\n\n📝 加入面談：\n加入 {面談對象} {面談者} {日期} {時間} {理由}\n例如：加入 約翰 陳佑庭 2024-01-15 14:30 聖殿推薦書面談\n\n📋 查看清單：\n面談清單\n\n✏️ 更新面談：\n更新 {ID} {欄位} {新值}\n例如：更新 1 面談對像 彼得\n可用欄位：面談對象、面談者、日期、時間、理由\n\n🗑️ 刪除面談：\n刪除 {ID}\n例如：刪除 1\n\n📋 查看提醒狀態：\n提醒狀態\n\n💡 注意事項：\n- 日期格式：YYYY-MM-DD\n- 時間格式：HH:mm\n- ID 可在面談清單中查看\n- 系統會自動發送24小時和3小時前的提醒通知'
+            text: '會長團助理使用說明：\n\n📝 加入面談：\n加入 {面談對象} {面談者} {日期} {時間} {理由}\n例如：加入 約翰 陳佑庭 2024-01-15 14:30 聖殿推薦書面談\n\n📋 查看清單：\n面談清單\n\n✏️ 更新面談：\n更新 {ID} {欄位} {新值}\n例如：更新 1 面談對像 彼得\n可用欄位：面談對象、面談者、日期、時間、理由\n\n🗑️ 刪除面談：\n刪除 {ID}\n例如：刪除 1\n\n📋 查看提醒狀態：\n提醒狀態\n\n💡 注意事項：\n- 日期格式：YYYY-MM-DD\n- 時間格式：HH:mm\n- ID 可在面談清單中查看\n- 系統會自動發送24小時和3小時前的提醒通知'
           };
           return client.replyMessage(event.replyToken, instructionMenu);
         }
@@ -895,9 +895,9 @@ app.get('/debug-reminders', async (req, res) => {
         reminder_3h_sent: i.reminder_3h_sent
       })),
       totalInterviewsInDB: allInterviewsResult.success ? allInterviewsResult.data.length : 'Error fetching',
-      bishopConfig: {
-        bishop_user_id: BISHOP_LINE_USER_ID,
-        bishop_user_id_valid: ReminderManager.isValidLineUserId(BISHOP_LINE_USER_ID)
+      presidentConfig: {
+        president_user_id: PRESIDENT_LINE_USER_ID,
+        president_user_id_valid: ReminderManager.isValidLineUserId(PRESIDENT_LINE_USER_ID)
       },
       groupConfig: {
         group_id: process.env.GROUP_ID,
@@ -981,11 +981,11 @@ app.all('/trigger-reminders', async (req, res) => {
   }
 });
 
-// Validate bishop configuration
-if (!BISHOP_LINE_USER_ID) {
-  console.warn('⚠️ BISHOP_LINE_USER_ID not configured - reminders will be sent to interview creator instead');
+// Validate president (會長) configuration
+if (!PRESIDENT_LINE_USER_ID) {
+  console.warn('⚠️ PRESIDENT_LINE_USER_ID not configured - reminders will be sent to interview creator instead');
 } else {
-  console.log('✅ Bishop LINE user ID configured for reminders');
+  console.log('✅ President (會長) LINE user ID configured for reminders');
 }
 
 // Production-ready error handling
@@ -1021,7 +1021,7 @@ app.listen(PORT, () => {
   console.log(`🔧 Configuration Status:`);
   console.log(`   - LINE Bot: ${lineConfig.channelAccessToken ? '✅ Configured' : '❌ Missing'}`);
   console.log(`   - Supabase: ${supabaseUrl ? '✅ Configured' : '❌ Missing'}`);
-  console.log(`   - Bishop ID: ${BISHOP_LINE_USER_ID ? '✅ Configured' : '⚠️ Not set'}`);
+  console.log(`   - President ID: ${PRESIDENT_LINE_USER_ID ? '✅ Configured' : '⚠️ Not set'}`);
 });
 
 module.exports = app;
