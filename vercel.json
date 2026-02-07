@@ -1,26 +1,10 @@
 {
   "version": 2,
-  "builds": [
-    {
-      "src": "app.js",
-      "use": "@vercel/node"
-    }
-  ],
+  "builds": [{ "src": "app.js", "use": "@vercel/node" }],
   "routes": [
-    {
-      "src": "/callback",
-      "dest": "/app.js"
-    },
-    {
-      "src": "/trigger-reminder",
-      "dest": "/app.js"
-    },
-    {
-      "src": "/(.*)",
-      "dest": "/app.js"
-    }
+    { "src": "/callback", "dest": "/app.js" },
+    { "src": "/trigger-reminders", "dest": "/app.js" },
+    { "src": "/(.*)", "dest": "/app.js" }
   ],
-  "env": {
-    "NODE_ENV": "production"
-  }
+  "env": { "NODE_ENV": "production" }
 }

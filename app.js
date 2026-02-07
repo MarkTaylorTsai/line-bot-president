@@ -23,6 +23,77 @@ const PRESIDENT_LINE_USER_ID = process.env.PRESIDENT_LINE_USER_ID;
 
 const client = new line.Client(lineConfig);
 
+// Track LINE users (follow) and groups (join) for reminder recipients
+class ContactTracker {
+  static async recordUser(userId) {
+    if (!userId) return { success: false };
+    try {
+      const { error } = await supabase
+        .from('line_users')
+        .upsert(
+          { user_id: userId, active: true, updated_at: new Date().toISOString() },
+          { onConflict: 'user_id', ignoreDuplicates: false }
+        );
+      if (error) throw error;
+      console.log('📌 Recorded user (follow):', userId);
+      return { success: true };
+    } catch (e) {
+      console.error('Error recording user:', e);
+      return { success: false, error: e.message };
+    }
+  }
+
+  static async recordGroup(groupId) {
+    if (!groupId) return { success: false };
+    try {
+      const { error } = await supabase
+        .from('line_groups')
+        .upsert(
+          { group_id: groupId, active: true, updated_at: new Date().toISOString() },
+          { onConflict: 'group_id', ignoreDuplicates: false }
+        );
+      if (error) throw error;
+      console.log('📌 Recorded group (join):', groupId);
+      return { success: true };
+    } catch (e) {
+      console.error('Error recording group:', e);
+      return { success: false, error: e.message };
+    }
+  }
+
+  static async setUserInactive(userId) {
+    if (!userId) return { success: false };
+    try {
+      const { error } = await supabase
+        .from('line_users')
+        .update({ active: false, updated_at: new Date().toISOString() })
+        .eq('user_id', userId);
+      if (error) throw error;
+      console.log('📌 User unfollowed (inactive):', userId);
+      return { success: true };
+    } catch (e) {
+      console.error('Error setting user inactive:', e);
+      return { success: false, error: e.message };
+    }
+  }
+
+  static async setGroupInactive(groupId) {
+    if (!groupId) return { success: false };
+    try {
+      const { error } = await supabase
+        .from('line_groups')
+        .update({ active: false, updated_at: new Date().toISOString() })
+        .eq('group_id', groupId);
+      if (error) throw error;
+      console.log('📌 Bot left group (inactive):', groupId);
+      return { success: true };
+    } catch (e) {
+      console.error('Error setting group inactive:', e);
+      return { success: false, error: e.message };
+    }
+  }
+}
+
 // Middleware
 // Note: express.json() is not needed for LINE webhook as it needs raw body for signature validation
 
@@ -87,6 +158,25 @@ class InterviewManager {
     } catch (error) {
       console.error('Error getting interviews:', error);
       return { success: false, error: error.message };
+    }
+  }
+
+  // Get all upcoming interviews (from today onwards) for broadcast
+  static async getAllUpcomingInterviews() {
+    try {
+      const today = moment.tz('Asia/Taipei').format('YYYY-MM-DD');
+      const { data, error } = await supabase
+        .from('interviews')
+        .select('*')
+        .gte('interview_date', today)
+        .order('interview_date', { ascending: true })
+        .order('interview_time', { ascending: true });
+
+      if (error) throw error;
+      return { success: true, data: data || [] };
+    } catch (error) {
+      console.error('Error getting all upcoming interviews:', error);
+      return { success: false, error: error.message, data: [] };
     }
   }
 
@@ -233,10 +323,10 @@ class InputValidator {
 
 // Message parsing functions
 class MessageParser {
-  // Parse "加入" command - Updated format: 加入 {面談對象} {面談者} {日期} {時間} {理由}
+  // Parse "新增" command - 新增 {面談對象} {面談者} {日期} {時間} {理由}
   static parseAddCommand(text) {
     // Allow both : and ： (full-width colon)
-    const regex = /加入\s+([^\s]+)\s+([^\s]+)\s+(\d{4}-\d{2}-\d{2})\s+(\d{2}[:：]\d{2})\s+(.+)/;
+    const regex = /新增\s+([^\s]+)\s+([^\s]+)\s+(\d{4}-\d{2}-\d{2})\s+(\d{2}[:：]\d{2})\s+(.+)/;
     const match = text.match(regex);
     
     if (!match) return null;
@@ -287,9 +377,9 @@ async function handleMessage(event) {
 
   try {
     // Handle different commands
-    if (text === '面談清單') {
+    if (text === '查看 全部' || text === '查看全部') {
       await handleListCommand(userId, event.replyToken);
-    } else if (text.startsWith('加入')) {
+    } else if (text.startsWith('新增')) {
       await handleAddCommand(text, userId, event.replyToken);
     } else if (text.startsWith('更新')) {
       await handleUpdateCommand(text, userId, event.replyToken);
@@ -315,7 +405,7 @@ async function handleListCommand(userId, replyToken) {
   if (!result.success) {
     await client.replyMessage(replyToken, {
       type: 'text',
-      text: '獲取面談清單時發生錯誤。'
+      text: '獲取清單時發生錯誤。'
     });
     return;
   }
@@ -328,7 +418,7 @@ async function handleListCommand(userId, replyToken) {
     return;
   }
 
-  let message = '📋 面談清單：\n\n';
+  let message = '📋 全部面談：\n\n';
   result.data.forEach((interview, index) => {
     const date = moment.tz(interview.interview_date, 'Asia/Taipei').format('YYYY-MM-DD');
     // Format time to show only HH:mm for display
@@ -353,7 +443,7 @@ async function handleAddCommand(text, userId, replyToken) {
   if (!parsed) {
     await client.replyMessage(replyToken, {
       type: 'text',
-      text: '格式錯誤！請使用：加入 {面談對象} {面談者} {日期} {時間} {理由}\n例如：加入 約翰 陳佑庭 2024-01-15 14:30 聖殿推薦書面談'
+      text: '格式錯誤！請使用：新增 {面談對象} {面談者} {日期} {時間} {理由}\n例如：新增 約翰 陳佑庭 2024-01-15 14:30 聖殿推薦書面談'
     });
     return;
   }
@@ -414,12 +504,12 @@ async function handleAddCommand(text, userId, replyToken) {
     const displayTime = parsed.time.substring(0, 5);
     await client.replyMessage(replyToken, {
       type: 'text',
-      text: '✅ 面談已成功加入！\n\n面談對象: ' + sanitizedData.intervieweeName + '\n面談者: ' + sanitizedData.interviewerName + '\n日期: ' + sanitizedData.date + '\n時間: ' + displayTime + '\n理由: ' + sanitizedData.reason + '\n\nID: ' + result.data.id
+      text: '✅ 面談已成功新增！\n\n面談對象: ' + sanitizedData.intervieweeName + '\n面談者: ' + sanitizedData.interviewerName + '\n日期: ' + sanitizedData.date + '\n時間: ' + displayTime + '\n理由: ' + sanitizedData.reason + '\n\nID: ' + result.data.id
     });
   } else {
     await client.replyMessage(replyToken, {
       type: 'text',
-      text: '加入面談時發生錯誤。'
+      text: '新增面談時發生錯誤。'
     });
   }
 }
@@ -525,7 +615,7 @@ async function handleReminderStatusCommand(userId, replyToken) {
   if (!result.success) {
     await client.replyMessage(replyToken, {
       type: 'text',
-      text: '獲取面談清單時發生錯誤。'
+      text: '獲取清單時發生錯誤。'
     });
     return;
   }
@@ -564,7 +654,7 @@ async function handleReminderStatusCommand(userId, replyToken) {
 }
 
 async function sendHelpMessage(replyToken) {
-  const helpText = '會長團助理使用說明：\n\n📝 加入面談：\n加入 {面談對象} {面談者} {日期} {時間} {理由}\n例如：加入 約翰 陳佑庭 2024-01-15 14:30 聖殿推薦書面談\n\n📋 查看清單：\n面談清單\n\n✏️ 更新面談：\n更新 {ID} {欄位} {新值}\n例如：更新 1 面談對象 彼得\n可用欄位：面談對象、面談者、日期、時間、理由\n\n🗑️ 刪除面談：\n刪除 {ID}\n例如：刪除 1\n\n📋 查看提醒狀態：\n提醒狀態\n\n💡 注意事項：\n- 日期格式：YYYY-MM-DD\n- 時間格式：HH:mm\n- ID 可在面談清單中查看\n- 系統會自動發送24小時和3小時前的提醒通知';
+  const helpText = '會長團助理使用說明：\n\n📝 新增面談：\n新增 {面談對象} {面談者} {日期} {時間} {理由}\n例如：新增 約翰 陳佑庭 2024-01-15 14:30 聖殿推薦書面談\n\n📋 查看全部：\n查看 全部\n\n✏️ 更新面談：\n更新 {ID} {欄位} {新值}\n例如：更新 1 面談對象 彼得\n可用欄位：面談對象、面談者、日期、時間、理由\n\n🗑️ 刪除面談：\n刪除 {ID}\n例如：刪除 1\n\n📋 查看提醒狀態：\n提醒狀態\n\n💡 注意事項：\n- 日期格式：YYYY-MM-DD\n- 時間格式：HH:mm\n- ID 可在「查看 全部」清單中查看\n- 系統會自動發送24小時和3小時前的提醒通知';
 
   await client.replyMessage(replyToken, {
     type: 'text',
@@ -592,7 +682,81 @@ class ReminderManager {
     return roomId && typeof roomId === 'string' && roomId.startsWith('R') && roomId.length === 33;
   }
 
-  // Send reminder message
+  // Get all user IDs and group IDs to send reminders to (tracked users/groups + env fallback)
+  static async getReminderRecipientIds() {
+    const userIds = new Set();
+    const groupIds = new Set();
+
+    // Tracked users: everyone who has added the bot as a friend (follow event)
+    try {
+      const { data: users, error: uErr } = await supabase
+        .from('line_users')
+        .select('user_id')
+        .eq('active', true);
+      if (!uErr && users) {
+        users.forEach(row => { if (row.user_id) userIds.add(row.user_id); });
+      }
+    } catch (e) {
+      console.error('Error fetching line_users for reminders:', e);
+    }
+
+    // Fallback: distinct users from interviews if no tracked users yet (e.g. before migration)
+    if (userIds.size === 0) {
+      try {
+        const { data: rows, error } = await supabase
+          .from('interviews')
+          .select('user_id');
+        if (!error && rows) {
+          for (const row of rows) {
+            if (row.user_id) userIds.add(row.user_id);
+          }
+        }
+      } catch (e) {
+        console.error('Error fetching distinct user_ids for reminders:', e);
+      }
+    }
+
+    // Add president if configured
+    if (PRESIDENT_LINE_USER_ID) userIds.add(PRESIDENT_LINE_USER_ID);
+
+    // Tracked groups: every group the bot has joined (join event)
+    try {
+      const { data: groups, error: gErr } = await supabase
+        .from('line_groups')
+        .select('group_id')
+        .eq('active', true);
+      if (!gErr && groups) {
+        groups.forEach(row => { if (row.group_id) groupIds.add(row.group_id); });
+      }
+    } catch (e) {
+      console.error('Error fetching line_groups for reminders:', e);
+    }
+
+    // Fallback: env group IDs if no tracked groups yet
+    if (groupIds.size === 0) {
+      const singleGroup = (process.env.GROUP_ID || '').trim();
+      if (singleGroup) groupIds.add(singleGroup);
+      const multipleGroups = (process.env.GROUP_IDS || '').trim();
+      if (multipleGroups) {
+        multipleGroups.split(',').map(s => s.trim()).filter(Boolean).forEach(id => groupIds.add(id));
+      }
+    } else {
+      // Also add env groups so both tracked and configured groups receive reminders
+      const singleGroup = (process.env.GROUP_ID || '').trim();
+      if (singleGroup) groupIds.add(singleGroup);
+      const multipleGroups = (process.env.GROUP_IDS || '').trim();
+      if (multipleGroups) {
+        multipleGroups.split(',').map(s => s.trim()).filter(Boolean).forEach(id => groupIds.add(id));
+      }
+    }
+
+    return {
+      userIds: [...userIds],
+      groupIds: [...groupIds]
+    };
+  }
+
+  // Send reminder message to every user and every group
   static async sendReminderMessage(interview, reminderType) {
     try {
       const date = moment.tz(interview.interview_date, 'Asia/Taipei').format('YYYY-MM-DD');
@@ -604,41 +768,39 @@ class ReminderManager {
       let sentCount = 0;
       const errors = [];
 
-      // Send to user ID (interview creator) - but only if it's a valid LINE user ID
-      if (interview.user_id && this.isValidLineUserId(interview.user_id)) {
+      const { userIds, groupIds } = await this.getReminderRecipientIds();
+
+      // Send to every user (all distinct users from interviews + president)
+      for (const userId of userIds) {
+        if (!this.isValidLineUserId(userId)) {
+          console.warn(`⚠️ Skipping user ${userId} - not a valid LINE user ID format`);
+          errors.push(`User ${userId}: Invalid LINE user ID format`);
+          continue;
+        }
         try {
-          console.log(`🔍 Attempting to send ${reminderType} reminder to user: ${interview.user_id}`);
-          console.log(`🔍 Interview details: ID=${interview.id}, Name=${interview.interviewee_name}, Date=${interview.interview_date}, Time=${interview.interview_time}`);
-          console.log(`🔍 Message content: ${message}`);
-          
-          await client.pushMessage(interview.user_id, {
+          await client.pushMessage(userId, {
             type: 'text',
             text: message
           });
           sentCount++;
-          console.log(`📨 Successfully sent ${reminderType} reminder to user ${interview.user_id} for interview ${interview.id}`);
+          console.log(`📨 Sent ${reminderType} reminder to user ${userId} for interview ${interview.id}`);
         } catch (error) {
-          console.error(`❌ Failed to send reminder to user ${interview.user_id}:`, error);
-          
-          // Log detailed LINE API error information
+          console.error(`❌ Failed to send reminder to user ${userId}:`, error);
           if (error.originalError && error.originalError.response) {
             console.error('LINE API error details:', error.originalError.response.data);
-            console.error('LINE API status:', error.originalError.response.status);
-            console.error('LINE API headers:', error.originalError.response.headers);
           }
-          
-          errors.push(`User ${interview.user_id}: ${error.message}`);
+          errors.push(`User ${userId}: ${error.message}`);
         }
-      } else if (interview.user_id) {
-        console.warn(`⚠️ Skipping user ${interview.user_id} - not a valid LINE user ID format`);
-        errors.push(`User ${interview.user_id}: Invalid LINE user ID format`);
       }
 
-      // Send to group ID (if available and valid)
-      const groupId = process.env.GROUP_ID;
-      if (groupId && this.isValidLineGroupId(groupId)) {
+      // Send to every group
+      for (const groupId of groupIds) {
+        if (!this.isValidLineGroupId(groupId)) {
+          console.warn(`⚠️ Skipping group ${groupId} - not a valid LINE group ID format`);
+          errors.push(`Group ${groupId}: Invalid LINE group ID format`);
+          continue;
+        }
         try {
-          console.log('Pushing to group:', groupId);
           await client.pushMessage(groupId, {
             type: 'text',
             text: message
@@ -647,46 +809,11 @@ class ReminderManager {
           console.log(`📨 Sent ${reminderType} reminder to group ${groupId} for interview ${interview.id}`);
         } catch (error) {
           console.error(`❌ Failed to send reminder to group ${groupId}:`, error);
-          
-          // Log detailed LINE API error information
           if (error.originalError && error.originalError.response) {
             console.error('LINE API error details:', error.originalError.response.data);
-            console.error('LINE API status:', error.originalError.response.status);
-            console.error('LINE API headers:', error.originalError.response.headers);
           }
-          
           errors.push(`Group ${groupId}: ${error.message}`);
         }
-      } else if (groupId) {
-        console.warn(`⚠️ Skipping group ${groupId} - not a valid LINE group ID format`);
-        errors.push(`Group ${groupId}: Invalid LINE group ID format`);
-      }
-
-      // Send to president (會長) if configured and valid
-      if (PRESIDENT_LINE_USER_ID && PRESIDENT_LINE_USER_ID !== interview.user_id && this.isValidLineUserId(PRESIDENT_LINE_USER_ID)) {
-        try {
-          console.log('Pushing to president:', PRESIDENT_LINE_USER_ID);
-          await client.pushMessage(PRESIDENT_LINE_USER_ID, {
-            type: 'text',
-            text: message
-          });
-          sentCount++;
-          console.log(`📨 Sent ${reminderType} reminder to president ${PRESIDENT_LINE_USER_ID} for interview ${interview.id}`);
-        } catch (error) {
-          console.error(`❌ Failed to send reminder to president ${PRESIDENT_LINE_USER_ID}:`, error);
-          
-          // Log detailed LINE API error information
-          if (error.originalError && error.originalError.response) {
-            console.error('LINE API error details:', error.originalError.response.data);
-            console.error('LINE API status:', error.originalError.response.status);
-            console.error('LINE API headers:', error.originalError.response.headers);
-          }
-          
-          errors.push(`President ${PRESIDENT_LINE_USER_ID}: ${error.message}`);
-        }
-      } else if (PRESIDENT_LINE_USER_ID && !this.isValidLineUserId(PRESIDENT_LINE_USER_ID)) {
-        console.warn(`⚠️ Skipping president ${PRESIDENT_LINE_USER_ID} - not a valid LINE user ID format`);
-        errors.push(`President ${PRESIDENT_LINE_USER_ID}: Invalid LINE user ID format`);
       }
 
       return { 
@@ -698,6 +825,65 @@ class ReminderManager {
       console.error('Error sending reminder message:', error);
       return { success: false, error: error.message };
     }
+  }
+
+  // Send the full interview list to every user and every group (for cron "list reminder")
+  static async sendInterviewListToEveryone() {
+    const result = await InterviewManager.getAllUpcomingInterviews();
+    if (!result.success) {
+      return { success: false, error: result.error, sentCount: 0 };
+    }
+    const interviews = result.data || [];
+    let message = '📋 全部面談提醒\n\n';
+    if (interviews.length === 0) {
+      message += '目前沒有即將舉行的面談。\n';
+    } else {
+      const maxLen = 4500;
+      for (let i = 0; i < interviews.length; i++) {
+        const interview = interviews[i];
+        const date = moment.tz(interview.interview_date, 'Asia/Taipei').format('YYYY-MM-DD');
+        const time = interview.interview_time ? String(interview.interview_time).substring(0, 5) : (interview.interview_time || '');
+        const block = `${i + 1}. ID: ${interview.id}\n   面談對象: ${interview.interviewee_name}\n   面談者: ${interview.interviewer_name || '未指定'}\n   日期: ${date}\n   時間: ${time}\n   理由: ${interview.reason || '無'}\n\n`;
+        if (message.length + block.length > maxLen) {
+          message += `…共 ${interviews.length} 筆面談，僅顯示部分。\n`;
+          break;
+        }
+        message += block;
+      }
+    }
+    message += '\n輸入「查看 全部」可查看完整清單。';
+
+    const { userIds, groupIds } = await this.getReminderRecipientIds();
+    let sentCount = 0;
+    const errors = [];
+
+    for (const userId of userIds) {
+      if (!this.isValidLineUserId(userId)) continue;
+      try {
+        await client.pushMessage(userId, { type: 'text', text: message });
+        sentCount++;
+      } catch (error) {
+        console.error(`Failed to send interview list to user ${userId}:`, error);
+        errors.push(`User ${userId}: ${error.message}`);
+      }
+    }
+    for (const groupId of groupIds) {
+      if (!this.isValidLineGroupId(groupId)) continue;
+      try {
+        await client.pushMessage(groupId, { type: 'text', text: message });
+        sentCount++;
+      } catch (error) {
+        console.error(`Failed to send interview list to group ${groupId}:`, error);
+        errors.push(`Group ${groupId}: ${error.message}`);
+      }
+    }
+
+    return {
+      success: true,
+      sentCount,
+      interviewCount: interviews.length,
+      errors: errors.length > 0 ? errors : undefined
+    };
   }
 
   // Process reminders
@@ -804,17 +990,18 @@ app.post('/callback', line.middleware(lineConfig), async (req, res) => {
       if (event.type === 'message' && event.message.type === 'text') {
         const userMessage = event.message.text;
 
-        if (userMessage === '呼叫面談助理') {
+        const isHelp = (msg) => (msg && (msg.trim().toLowerCase() === 'help' || msg.trim() === '幫助'));
+        if (isHelp(userMessage)) {
           const instructionMenu = {
             type: 'text',
-            text: '會長團助理使用說明：\n\n📝 加入面談：\n加入 {面談對象} {面談者} {日期} {時間} {理由}\n例如：加入 約翰 陳佑庭 2024-01-15 14:30 聖殿推薦書面談\n\n📋 查看清單：\n面談清單\n\n✏️ 更新面談：\n更新 {ID} {欄位} {新值}\n例如：更新 1 面談對像 彼得\n可用欄位：面談對象、面談者、日期、時間、理由\n\n🗑️ 刪除面談：\n刪除 {ID}\n例如：刪除 1\n\n📋 查看提醒狀態：\n提醒狀態\n\n💡 注意事項：\n- 日期格式：YYYY-MM-DD\n- 時間格式：HH:mm\n- ID 可在面談清單中查看\n- 系統會自動發送24小時和3小時前的提醒通知'
+            text: '會長團助理使用說明：\n\n📝 新增面談：\n新增 {面談對象} {面談者} {日期} {時間} {理由}\n例如：新增 約翰 陳佑庭 2024-01-15 14:30 聖殿推薦書面談\n\n📋 查看全部：\n查看 全部\n\n✏️ 更新面談：\n更新 {ID} {欄位} {新值}\n例如：更新 1 面談對象 彼得\n可用欄位：面談對象、面談者、日期、時間、理由\n\n🗑️ 刪除面談：\n刪除 {ID}\n例如：刪除 1\n\n📋 查看提醒狀態：\n提醒狀態\n\n💡 注意事項：\n- 日期格式：YYYY-MM-DD\n- 時間格式：HH:mm\n- ID 可在「查看 全部」清單中查看\n- 系統會自動發送24小時和3小時前的提醒通知'
           };
           return client.replyMessage(event.replyToken, instructionMenu);
         }
 
         // Handle CRUD commands
-        if (userMessage === '面談清單' || 
-            userMessage.startsWith('加入') || 
+if (userMessage === '查看 全部' || userMessage === '查看全部' ||
+            userMessage.startsWith('新增') ||
             userMessage.startsWith('更新') || 
             userMessage.startsWith('刪除') || 
             userMessage === '提醒狀態') {
@@ -824,17 +1011,27 @@ app.post('/callback', line.middleware(lineConfig), async (req, res) => {
         // If the message is not recognized, do nothing
         return Promise.resolve(null);
       } else if (event.type === 'follow') {
-        // Greet new user
+        const userId = event.source.type === 'user' ? event.source.userId : null;
+        if (userId) ContactTracker.recordUser(userId);
         return client.replyMessage(event.replyToken, {
           type: 'text',
-          text: '👋 歡迎使用面談助理！輸入「呼叫面談助理」查看功能選單，或直接使用以下指令：\n\n• 加入 {面談對象} {面談者} {日期} {時間} {理由}\n• 面談清單\n• 更新 {ID} {欄位} {新值}\n• 刪除 {ID}'
+          text: '👋 歡迎使用面談助理！輸入「help」或「幫助」查看功能選單，或直接使用以下指令：\n\n• 新增 {面談對象} {面談者} {日期} {時間} {理由}\n• 查看 全部\n• 更新 {ID} {欄位} {新值}\n• 刪除 {ID}'
         });
+      } else if (event.type === 'unfollow') {
+        const userId = event.source.type === 'user' ? event.source.userId : null;
+        if (userId) ContactTracker.setUserInactive(userId);
+        return Promise.resolve(null);
       } else if (event.type === 'join') {
-        // Handle group join
+        const groupId = event.source.type === 'group' ? event.source.groupId : null;
+        if (groupId) ContactTracker.recordGroup(groupId);
         return client.replyMessage(event.replyToken, {
           type: 'text',
-          text: '👋 您好！我是面談助理！請輸入「呼叫面談助理」查看功能選單。'
+          text: '👋 您好！我是面談助理！請輸入「help」或「幫助」查看功能選單。'
         });
+      } else if (event.type === 'leave') {
+        const groupId = event.source.type === 'group' ? event.source.groupId : null;
+        if (groupId) ContactTracker.setGroupInactive(groupId);
+        return Promise.resolve(null);
       } else {
         // Ignore other events
         return Promise.resolve(null);
@@ -901,7 +1098,13 @@ app.get('/debug-reminders', async (req, res) => {
       },
       groupConfig: {
         group_id: process.env.GROUP_ID,
+        group_ids: (process.env.GROUP_IDS || '').split(',').map(s => s.trim()).filter(Boolean),
         group_id_valid: ReminderManager.isValidLineGroupId(process.env.GROUP_ID)
+      },
+      reminderRecipients: await ReminderManager.getReminderRecipientIds(),
+      trackedContacts: {
+        line_users: await supabase.from('line_users').select('user_id, active, created_at').then(({ data, error }) => error ? { error: error.message } : data),
+        line_groups: await supabase.from('line_groups').select('group_id, active, created_at').then(({ data, error }) => error ? { error: error.message } : data)
       }
     });
   } catch (error) {
@@ -945,39 +1148,72 @@ app.post('/create-test-interview', async (req, res) => {
 });
 
 // Manual reminder trigger endpoint (for external cron service)
-// Accepts both GET and POST requests for flexibility
+// GET or POST. Use ?action=interview-list to send interview list to everyone instead of 24h/3h reminders.
 app.all('/trigger-reminders', async (req, res) => {
   try {
-    // Verify API key if provided (optional security)
+    if (!process.env.SUPABASE_URL || !process.env.SUPABASE_KEY) {
+      console.error('trigger-reminders: SUPABASE_URL or SUPABASE_KEY not set');
+      return res.status(500).json({
+        error: 'Server config error',
+        detail: 'SUPABASE_URL or SUPABASE_KEY not configured. Set them in Vercel project Environment Variables.',
+        timestamp: new Date().toISOString()
+      });
+    }
+
     const apiKey = req.headers['x-api-key'] || req.query.apiKey;
     const expectedApiKey = process.env.CRON_API_KEY;
-    
     if (expectedApiKey && apiKey !== expectedApiKey) {
       console.warn('⚠️ Invalid API key provided for reminder trigger');
       return res.status(401).json({ error: 'Unauthorized' });
     }
 
+    const action = (req.query.action || '').toLowerCase();
+
+    if (action === 'interview-list') {
+      console.log('📋 Sending interview list to everyone...');
+      const result = await ReminderManager.sendInterviewListToEveryone();
+      if (result.success) {
+        return res.json({
+          success: true,
+          message: 'Interview list sent to everyone',
+          sentCount: result.sentCount,
+          interviewCount: result.interviewCount,
+          errors: result.errors,
+          timestamp: new Date().toISOString()
+        });
+      }
+      return res.status(500).json({
+        success: false,
+        error: result.error,
+        sentCount: result.sentCount || 0,
+        timestamp: new Date().toISOString()
+      });
+    }
+
     console.log('🕐 Processing reminders via serverless endpoint...');
     const result = await ReminderManager.processReminders();
-    
     if (result.success) {
-      res.json({ 
-        success: true, 
+      res.json({
+        success: true,
         message: 'Reminders processed successfully',
         totalSent: result.totalSent,
         errors: result.errors,
         timestamp: new Date().toISOString()
       });
     } else {
-      res.status(500).json({ 
-        success: false, 
+      res.status(500).json({
+        success: false,
         error: result.error,
         timestamp: new Date().toISOString()
       });
     }
   } catch (error) {
     console.error('Error triggering reminders:', error);
-    res.status(500).json({ error: 'Failed to process reminders' });
+    res.status(500).json({
+      error: 'Failed to process reminders',
+      detail: error.message,
+      timestamp: new Date().toISOString()
+    });
   }
 });
 
@@ -1008,20 +1244,18 @@ app.use((err, req, res, next) => {
   });
 });
 
-// Production-ready server startup
+// Production-ready server startup (skip on Vercel – api/* runs as serverless)
 const PORT = process.env.PORT || 3000;
 const NODE_ENV = process.env.NODE_ENV || 'development';
-
-app.listen(PORT, () => {
-  console.log(`🚀 LINE Interview Bot server is running on port ${PORT}`);
-  console.log(`📊 Environment: ${NODE_ENV}`);
-  console.log(`⏰ Server started at: ${new Date().toISOString()}`);
-  
-  // Log configuration status
-  console.log(`🔧 Configuration Status:`);
-  console.log(`   - LINE Bot: ${lineConfig.channelAccessToken ? '✅ Configured' : '❌ Missing'}`);
-  console.log(`   - Supabase: ${supabaseUrl ? '✅ Configured' : '❌ Missing'}`);
-  console.log(`   - President ID: ${PRESIDENT_LINE_USER_ID ? '✅ Configured' : '⚠️ Not set'}`);
-});
+if (process.env.VERCEL !== '1') {
+  app.listen(PORT, () => {
+    console.log(`🚀 LINE Interview Bot server is running on port ${PORT}`);
+    console.log(`📊 Environment: ${NODE_ENV}`);
+    console.log(`⏰ Server started at: ${new Date().toISOString()}`);
+    console.log(`   - LINE Bot: ${lineConfig.channelAccessToken ? '✅ Configured' : '❌ Missing'}`);
+    console.log(`   - Supabase: ${supabaseUrl ? '✅ Configured' : '❌ Missing'}`);
+    console.log(`   - President ID: ${PRESIDENT_LINE_USER_ID ? '✅ Configured' : '⚠️ Not set'}`);
+  });
+}
 
 module.exports = app;

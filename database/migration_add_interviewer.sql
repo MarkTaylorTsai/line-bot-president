@@ -9,7 +9,10 @@ ADD COLUMN IF NOT EXISTS interviewer_name VARCHAR(255);
 -- Add comment for documentation
 COMMENT ON COLUMN interviews.interviewer_name IS '面談者 - The person conducting the interview';
 
--- Update the existing function to include interviewer
+-- Drop existing function first (return type is changing)
+DROP FUNCTION IF EXISTS get_user_interviews(character varying);
+
+-- Recreate the function to include interviewer
 CREATE OR REPLACE FUNCTION get_user_interviews(user_id_param VARCHAR(255))
 RETURNS TABLE (
     id BIGINT,
